@@ -1,0 +1,465 @@
+2026-01-05 21:45:30,697 - INFO - Processing DOCX file: INT-116 NextSys to Openlink Actualized Cargo Technical Requirements.cleaned.docx
+2026-01-05 21:45:30,936 - INFO - Extracted text from DOCX file: INT-116 NextSys to Openlink Actualized Cargo Technical Requirements.cleaned.docx
+2026-01-05 21:47:35,103 - INFO - Processing DOCX file: INT-116 NextSys to Openlink Actualized Cargo Technical Requirements.cleaned.docx
+2026-01-05 21:47:35,449 - INFO - Extracted text from DOCX file: INT-116 NextSys to Openlink Actualized Cargo Technical Requirements.cleaned.docx
+2026-01-05 21:48:27,515 - INFO - Processing DOCX file: INT-116 NextSys to Openlink Actualized Cargo Technical Requirements.cleaned.docx
+2026-01-05 21:48:27,754 - INFO - Extracted text from DOCX file: INT-116 NextSys to Openlink Actualized Cargo Technical Requirements.cleaned.docx
+2026-01-05 21:48:27,754 - INFO - Extracted text content: 
+
+
+
+
+
+INT-116 NextSys to Openlink Actualized Cargoes Requirements & Design
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Platform Information
+Contacts
+
+Document Library
+
+Dependencies and Risks
+Upstream Dependencies:
+NextSys System / Instance Availability: Integration Hub depends on NextSys source for integration to Openlink, so a valid instance of NextSys with an ODATA V2 connectivity API endpoint is prerequisite for this integration.
+Downstream Dependencies:
+Openlink System / Instance Availability: The availability of the Openlink system is crucial for the successful integration with the Integration Hub. Openlink will query the Integration Hub to access data sourced from NextSys.
+Known Risks:
+Duplicate Data: In distributed systems, duplicate data may be transmitted due to network retries. Therefore, receiving systems must ensure their operations are idempotent and capable of handling duplicate data effectively.
+Dependency Downtime: Scheduled maintenance or upgrades in the upstream systems can result in temporary downtime of the integration flow, potentially impacting the near real-time integration requirements SLA.
+Integrations Overview
+The integration between NextSys and Openlink (ETRM) is about making sure both systems stay in sync with the latest operational data that supports LNG and HHC trading activities. 
+NextSys will provide updated information such as lifting schedules, cargo movements, inventory levels, and energy usage. This helps the commercial and operations teams in Openlink make timely and informed decisions. If anything changes during the day, like a correction to inventory or a shift in demand, those updates will be available right away. At the end of each month, finalized inventory numbers will also be shared, with corrections sent if needed. This setup ensures everyone is working with the most current and accurate data, reducing delays, and improving coordination across teams.
+Functional Diagram
+Functional diagram as received by NextSys / Openlink.
+
+Figure 1:  Primary components, systems, and data flows for the NextSys application. Highlighted is the in-scope communication between NextSys and Openlink (ETRM)
+
+Figure 2:  High level communication / data flow between NextSys, Integration Hub &  Openlink systems.
+
+Integration Details
+Actualized Cargo:
+
+Data Flow Step
+
+Actualized Cargos High Level Data Flow
+
+Source System (NextSys)
+This section details the criteria, frequency, volume, and key assumptions related to the source system. It provides information on how data is sourced, processed, and integrated into the system. Additionally, it addresses the security measures and considerations for this integration, specifies the transformation rules applied to the data, outlines the strategies and practices implemented to protect this integration and data from security threats, describes the end points for data integration, and provides a diagram of the integration process.
+System Integration Component Diagram
+Detailed diagram not available. Vendor informed that it’s a black box, as shown below.
+
+Figure 4:  NextSys System exposing ODATA V2 feed to pull data.
+Key Assumptions
+All LNG quantities will be energy values in MMBtu and all HHC quantities will be volume in gallons
+The time-tamp query parameter will be in Houston local time (Central Time).
+Connectivity Details
+Integration Hub will connect to NextSys OData V2 API endpoints listed below to pull data:
+
+Source Data Mapping & Key Transformation Rules
+Please refer to the Mapping document below for Transformation rules:
+Note : Data fetched from NextSys is being sent to OpenLink as is and no mapping is done. For ADLS additional metadata (jobruntimestamputc, jobruntimestamplocal, correlationId) is being included. Refer worksheet named “Datalake Store Message Example”.
+
+
+Security Considerations
+Integration Hub will connect to NextSys leveraging Mutual TLS (mTLS) authentication using client-side certificate authentication and server-side certificate validation. This certificate will be created by Next-Decade and imported into Key Vault for Integration Hub for its validation with NextSys.
+NextDecade IT will create and implement the certificates for each environment (Dev, QA, Prod).
+Secure traffic will flow over port 443 between Integration Hub and NextSys.
+All NextSys integrations leverage mTLS for Data Encryption in Transit. Data Encryption at Rest will be provided by the Platform for e.g. Storage. No data obfuscation is necessary, since there is no PII data.
+Destination System (Openlink)
+The integration between NextSys and Openlink will enable seamless data exchange of critical operational information, including LNG/HHC lifting schedules, feed gas and power demand forecasts, and actualized inventory levels. By automating the flow of this data, the integration will enhance decision-making capabilities, improve forecasting accuracy, and optimize inventory management. Ultimately, this will lead to increased operational efficiency.
+
+System Integration Component Diagram
+Detailed diagram not available.  Vendor informed that it’s a black box, as shown below.
+Figure 5:  System Integration Diagram
+Key Assumptions
+Key Integration Pattern will be Asynchronous Request-Response, i.e. Openlink will request data from Integration Hub and will give a webhook URL that can be called asynchronously by Integration Hub when the data is ready to be pushed to Openlink.
+The Actualized Cargo query from Openlink would include timestamp in UTC, webhook URL (if needed when not configurable).  Adhoc might include CargoId.
+The Actualized Cargo response payload should be small enough to be embedded. But we will leverage the Claim-Check pattern to accommodate larger payloads.
+Integration Hub must not rely solely on webhook success; retry POST or allow client polling during error or conditions where processing on OLF side has failures for whatever reason.
+OLF will maintain durable Correlationid cache and audit logs for recovery & reconciliation.
+OLF will use idempotent webhook handling—client should gracefully handle duplicate POSTs.
+Use security verification on the webhook to validate authenticity of incoming POSTs
+Client polling must be rate-limited using exponential-backoff with alert thresholds.
+Destination Data Mapping & Key Transformation Rules
+The Integration Hub will receive raw data from NextSys and provide the raw data to Openlink.
+Connectivity Details
+
+Data Request Flow
+Actors
+Openlink
+Webhook Endpoint (OLF)
+Polling
+Integration Server
+Initial Request and Asynchronous Webhook Callback
+OLF              	 Integration Server              Webhook (OLF-controlled)
+  |                		   |                  	                 |
+  |--------[1] Request---------->|                 	                 |
+  |   payload: {    		   |                 	                 |
+  |     params,    		   |                 	          	     |
+  |     webhook_url  		   |                  	          	     |
+  |   }           		   |                             	     |
+  |                		   |                               	     |
+  |<--------[2] Ack + TxId-------|              	  	           |
+  |              		         |                                     |
+  |            		         |---[3] Process Request-------------> |
+  |           		         |                           	     |
+  |         		         |... async compute ...      	     |
+  |         		         |                           	     |
+  |         		         |---[4a] POST Webhook: Full Data----->|
+  |         		         |     body: { tx_id, data }           |
+  |          		         |                             	     |
+  |          		      OR                              	     |
+  |        		               |---[4b] POST Webhook: Claim Check--->|
+  |        		               |     body: { tx_id, claim_check_url }|
+  |             		         |                             	     |
+  |            		         |                       		     |
+  |--[5b] GET Claim Check URL -> |                      	           |
+  |     payload: { tx_id }       |                     		     |
+  |<-- response: full data ----- |					    	     |
+  |                              |                          	     |
+
+Parameters JSON object will contain:
+A unique Request ID
+A timestamp in UTC
+The data request object
+OLF State & Error Management
+States:
+
+Error Types & Client Handling
+
+
+
+Security Considerations
+Openlink will authenticate with Integration Hub using OAuth/JWT Token.
+Integration Hub will authenticate with Openlink using OAuth/JWT Token
+TLS traffic over port 443 will flow between Openlink and Integration Hub
+All Openlink connectivity to Integration Hub will leverage TLS for Data Encryption in Transit. Data Encryption at Rest will be provided by the Platform for e.g. Storage. No data obfuscation is necessary, since there is no PII data.
+Error Handling & Recoverability
+Error Types & Client Handling
+
+OLF Recovery Using Transaction ID
+Timeout, Error or Missed Webhook – Polling for Recovery
+
+OLF                           			Integration Server
+  |                                 			|
+  |---[1] POLL STATUS (tx_id) ---------------------->	|
+  |   body: { tx_id }             			|
+  |                               			|
+  |<--[2] STATUS RESPONSE -------------------------- |
+  |   body: {                     			|
+  |     tx_id,                    			|
+  |     status: [PENDING|READY], 		|
+  |     [claim_check_url | data] 		|
+  |   }                           			|
+  |                               			|
+  |---[3a] IF READY + claim_check --> GET Claim Check |
+  |---[3b] IF READY + data inlined --> STORE          |
+  |---[3c] IF PENDING --> RE-SCHEDULE POLL            |
+
+OLF Transaction Tracking Schema
+Enterprise Integration Hub
+The Enterprise Integration Hub serves as a critical middleware component facilitating seamless integration between NextSys and Openlink for the latest operational data that supports LNG and HHC trading activities. The following Integration Patterns describe how the data flows between NextSys (source) and Openlink (destination).
+Actualized Cargo Data Flow
+
+Figure 6 : Openlink-NextSys Architecture Diagram
+The key components involved in the above integration are as follows:
+Openlink (Source System): After authenticating via JWT Token, Openlink initiates the REST API call to Integration Hub via APIM, passing in the timestamp in UTC. The request will also include a return Webhook URL, that can be invoked by Integration Hub to notify Openlink when the data is ready to be received by OpenLink. 
+
+NOTE: A state file using the CorrelationId will also be saved to indicate that status of that request, when Openlink queries for its status. This CorrelationId is returned back to Openlink as part of the response body during its initial request.
+
+ A sample example of the POST request is shown below.
+{
+    "SampleHttpRequest": {
+        "method": "POST",
+        "url": "https://api.exampIe.com/resource?timestampUtc=24-06-10T15:30:00Z",
+        "headers": {
+            "content-Type": "application/json"
+        },
+        "body": {
+            "WebHookUrl": https://webhook.site/your-callback-url,
+             "TimeStampUTC":"2025-08-17T12:00:00Z"
+        }
+    }
+}
+Integration Hub Collector App: 
+Function: Openlink-ActualizedCargos-Collect
+A function named “Openlink-ActualizedCargos-Collect” receives the API request via HTTP Trigger, validates the request then it unwraps the payload, hydrates the integration event with metadata and persists that into the Cosmos (Inbox). Refer to the following Collector Wiki link for more details:  Collector App - Overview.  A sample json of the persisted payload is shown below
+{
+    "CorrelationId": "1234567890",
+    "Source": "Openlink",
+    "IntegrationType": "ActualizedCargos",
+    "Timestamp": "2023-10-01T12:00:00Z",
+    "ClaimCheck": false,
+    "Payload” : {
+    		"TimeStampUTC":"2025-08-17T12:00:00Z",
+ "WebHookUrl":"https://azwopenlnkdsc01.next-decade.com/Openlink-Interface/Openlink/NextSys/InboundRequest"     
+}
+
+Integration Hub Router App: Processes the in-boxed event and hydrates it with the routing-slip information and persists that into outbox, which is again processed by the router function and dispatched to the first topic “openlink-actualizedcargos- nextsys -dispatch” in the route. Additional details of the Router App are provided in the ND Integration Hub Wiki Router App - Overview.
+A sample json of the routing-slip lookup and persisted event is shown below:
+Routing-Slip:
+{
+  "id": "openlink- actualizedcargos ",
+  "source": "openlink",
+  "type": "actualizedcargos",
+  "routingSlip": {
+    "routes": [
+      {
+        "destination": "nextsys",
+        "topics": [
+          "openlink-actualizedcargos-nextsys-dispatch",
+          "nextsys-actualizedcargos-openlink-collect",
+        ]
+      }
+    ]
+  }
+}   
+Integration Hub Dispatcher App: The dispatcher app subscribes to the “openlink-actualizedcargos- nextsys -dispatch” topic where the event is published by the router and after receiving the message executes it against the NextSys ODATA API endpoint. After authenticating via mTLS certificate, Integration Hub starts the ODATA v2 pull process by sending a request to the NextSys by passing the timestamp (UTC converted to local Houston time) that it received from Openlink, via APIM. 
+An example of the ODATA request for actualized cargo is shown below: 
+https://api.test.us1.energysys.com/odata-cert/resource.svc/FF60DC69DF733832000000408BA3AD4C/TD_LNGC_CARGO?$filter=EU_MODIFIED_AT gt DateTime'2025-09-11T09:13:28'&$select=CARGO_ID,CARGO_TYPE,CARGO_STATUS,CARGO_ACTION,CONTRACT_YEAR,CONTRACT_ID,SUB_CONTRACT_ID,BUYER_NAME,LOADING_WINDOW,SUPPLY_FACILITY,LOADING_SCQ_MMBTU,UNLOADING_SCQ_MMBTU,DIVERSION_STATUS,RELATED_CARGO_ID,LOADING_WINDOW_BUYER,LOADING_WINDOW_SELLER,PRODUCT,EU_CREATED_AT,EU_MODIFIED_AT,TD_LNGC_SERVICES_link/SERVICE_TYPE,TD_LNGC_SERVICES_link/CARGO_ID,TD_LNGC_SERVICES_link/SERVICE_TYPE,TD_LNGC_SERVICES_link/SERVICE_REQUIRED,TD_LNGC_SERVICES_link/ESTIMATED_QTY_M3,TD_LNGC_SERVICES_link/ESTIMATED_TIME_HRS,TD_LNGC_SERVICES_link/ACTUAL_QTY_M3,TD_LNGC_SERVICES_link/ACTUAL_QTY_MMBTU,TD_LNGC_SERVICES_link/EU_CREATED_AT,TD_LNGC_SERVICES_link/EU_MODIFIED_AT,TD_LNGC_PARCEL_link/CARGO_ID,TD_LNGC_PARCEL_link/PARCEL_ID,TD_LNGC_PARCEL_link/DESTINATION_COUNTRY,TD_LNGC_PARCEL_link/PORT_NAME,TD_LNGC_PARCEL_MEASUREMENT_link/CARGO_PARCEL_KEY,TD_LNGC_CALC_RESULT_link/CARGO_ID,TD_LNGC_CALC_RESULT_link/MEASUREMENT,TD_LNGC_CALC_RESULT_link/MEASUREMENT_TYPE,TD_LNGC_CALC_RESULT_link/QUANTITY,TD_LNGC_CALC_RESULT_link/UNIT,TD_LNGC_CALC_RESULT_link/EU_CREATED_AT,TD_LNGC_CALC_RESULT_link/EU_MODIFIED_AT&$expand=TD_LNGC_SERVICES_link,TD_LNGC_PARCEL_link,TD_LNGC_PARCEL_MEASUREMENT_link,TD_LNGC_CALC_RESULT_link&$format=json
+Once the data is fetched from NextSys it saves the payload to data lake gen 2 raw storage by calling its API endpoint. The file uploaded will be time-stamped by its fetch date. e.g. actualized_cargo_yyyymmddhhmmss.json.  The raw payload is also saved in blob storage using our convention path and that “Claim-Check” URL is passed to the collector using the “nextsys-actualizedcargos-openlink-collect” topic. Additional information about the Dispatcher App are on the ND Integrated Hub Wiki Dispatcher App - Overview.
+
+Integration Hub CollectorApp: The collector app, then finally returns the results to Openlink by calling the webhook URL and sending the fetched data in request body or by generating the SAS token for the blob file. If there are any errors calling the webhook, then it will log the results in a file called correlationId_ actualized_cargo_yyyymmddhhmmss.json. and will use those computed results to return to Openlink through the RequestID / CorrelationId  URL (which is where Openlink will query for incomplete actualized cargo results). The file will be used for tracking the request status from the Openlink, please see OLF Recovery Using Transaction ID section for tracking statuses. Refer to the following Collector Wiki link for more details:  Collector App - Overview.
+
+The request URL will be :
+Environment :  DEV
+1. Fetch data using modified date.
+Url: https://api-eih-dev.next-decade.com/external/openlink/actualizedcargos/v1 
+Body :
+	  "Payload": {
+      			"timestampUtc":"2025-07-01T00:00:00Z",
+      			"webhookUrl":"https://webhook.site/your-callback-url"     
+   		      }
+
+
+Method: POST
+
+2. Fetch using request ID
+Url: https://api-eih-dev.next-decade.com/external/openlink/actualizedcargos/openlink-actualizedcargos-collect/{requestId}
+Method: GET
+
+
+
+
+
+DP Endpoints: 
+Key Assumptions
+Data Handling:
+Openlink only requires net changes or the latest snapshot of data and not intermediate changes.
+Unmastered data can be sent to Openlink if not already mastered. If Openlink does not have the master record value, it will request it again.
+The unit of work is per record and there are no interdependencies between records, meaning each record works in isolation and only the latest record is returned.
+The Openlink querying timeframe is limited to a maximum of 1 week in past.
+Callback Implementation
+The same webhook will be used for all requests.
+Each request will carry a unique request ID.
+The ad-hoc request will be the same as the scheduled request from a data flow process.
+Delta tables will maintain an append log for actualized and deleted cargos. Refer to the table Actualized Cargo table structure in the previous section of the document for more details.
+All timestamp queries will be in UTC. For e.g. 2025-07-16 09:13:04Z
+2025-07-16: This represents the date: July 16, 2025. 09:13:04: This represents the time: 9 hours, 13 minutes, and 4 seconds. Z: This is the "Zulu" time zone designator, which explicitly indicates that the time is in UTC (Coordinated Universal Time). It's equivalent to a UTC offset of +00:00. 
+Connectivity Details
+Security Considerations
+Refer to NextSys and Openlink security considerations for more details.
+Integration Hub will leverage JWT Token authentication and authorization with Openlink when connecting to its webhook URL for returning actualized cargo data. 
+App Registrations for Platform:
+NextSysClient-Dev
+NextSysClient-QA
+NextSysClient-Prod
+App IDs and Secrets are contained in the App Registrations for Integrations document.
+Data Mapping & Transformation Rules 
+Please refer to the Mapping document below for Destination field mappings:
+Note : Data fetched from NextSys is being sent to OpenLink as is and no mapping is done. For ADLS additional metadata (jobruntimestamputc, jobruntimestamplocal, correlationId) is being included. Refer worksheet named “Datalake Store Message Example”.
+
+
+Error Handling & Recovery
+OData Pull from NextSys
+
+Any failed records will be notified by email to a group mailbox provided by NextSys.  The hub will use shaj.manohar@accord-esl.com.  NextSys will update this email at a later date.
+Business owner – get input on the group to be notified.  Data validation errors.  Technical errors will be separate group.
+Server unavailable error – send email to support group.  Shaj to find out what group to use or who to contact.
+Data push to Openlink
+
+
+Non-Functional Requirements
+
+Test Data
+The Source Message Example and the Destination Message Example tabs in the Mapping spreadsheet, include the sample test data for Integration Hub. These samples serve as a crucial component for automating unit tests within the Integration Hub. By utilizing these examples, we can ensure that the data transformation and integration processes are thoroughly tested and validated.
+
+The Source Message Example tab includes sample data that represents the input messages received by the Integration Hub from Source System. This data is used to simulate real-world scenarios and test how the Integration Hub processes and transforms the incoming messages.
+
+The Destination Message Example tab, contains sample data that represents the output messages generated by the Integration Hub after processing the input messages. This data is used to verify that the Integration Hub correctly transforms input messages into the desired output format, ensuring data consistency and accuracy.
+
+By automating unit tests using these sample data examples, we can efficiently identify and address any issues or discrepancies in the data transformation and integration processes. This helps to maintain the reliability and robustness of the Integration Hub, ensuring that it meets the required functional and technical specifications.
+  
+Acceptance Criteria
+Success Criteria
+Collector function is triggered correctly by API request via APIM using HTTPS and responds with HTTP 200 OK.
+Data is successfully sent to Cosmos inbox.
+Correlation ID is generated in the metadata.
+The http request is Initiated by NextSys, and it goes through EIH components like Collector, Router and Dispatcher and finally reach to OpenLInk. The response payload is sent back to Source as it is successfully without any error.
+Dispatcher also publishes the response payload to datalake.
+Each execution is logged in Application Insights.
+
+Test Cases
+These test cases Test Plan 9220 Integration Testing - Test Plans are used for end-to-end integration tests, which play a crucial role in ensuring that all components of the system work together seamlessly. These tests are designed to validate the entire workflow from start to finish, simulating real-world scenarios to identify any issues or discrepancies that may arise during actual operation.
+End-to-end integration tests are particularly important for User Acceptance Testing (UAT). UAT is the final phase of the testing process, where end users evaluate the system to ensure it meets their requirements and expectations. During this phase, end users run the integration tests to verify that the system performs as intended in a production-like environment.
+We can accomplish the following using end-to-end testing:
+Validate Functionality: Ensure that all features and functionalities of the system are working correctly and as expected.
+Identify Issues: Detect any bugs, errors, or inconsistencies that may not have been caught during earlier testing phases.
+Assess Performance: Evaluate the system's performance under realistic conditions, including its ability to handle expected workloads and user interactions.
+Ensure Compliance: Confirm that the system complies with relevant regulations, standards, and business requirements.
+Gain Confidence: Build confidence in the system's reliability and readiness for deployment.
+Overall, these test cases are essential for providing end users with the assurance that the system is fully functional, reliable, and ready for use in a live environment.
+
+Appendix
+Additional information from Veritas for Openlink.
+
+
+Blob Lifecycle
+The standard for the Blob Lifecycle is posted in the Wiki: Blob Storage Lifecycle Management Policies - Overview
+Table Structure (subject to changes)
+The list of tables designed is based on the source message provided in the NEXTSYS_TO_OPENLINK_ACTUALIZED_CARGO_DATA_MAPPING_DESIGN_DOCUMENT.xlsx document.
+The design is based on the following approach:
+Data Tables/Staging Tables
+Audit Tables
+Mapping Table(s)
+Data Tables/Staging Tables
+Each table/object ID is considered as one staging table. These tables are categorized into the data tables
+There are 6 individual staging tables as per the mapping provided
+Cargo Details Table
+Service Details Table
+Parcel Details Table
+Parcel Measurements Table
+Cargo Measurements Table
+Cargo Deleted Table
+Each table will be related by a primary column called cargoID. Cargo Details Table is being considered as the main table
+Audit Tables
+Audit tables log the request and response state of each request.
+Request Log Table
+Response Log Table
+Mapping Tables
+Mapping tables provide the relation between data tables and audit tables.
+NEXTSYS_TO_OPENLINK_ACTUALIZED_CARGO_DATA_MAPPING_DESIGN_DOCUMENT.xlsx
+Assumptions
+The cargoID value in all the data tables is unique for each request. This will be the primary key which will be mapped with all the other tables.
+List of Tables
+Cargo Details Table
+
+Service Details Table
+
+Parcel Details Table
+
+Parcel Measurements Table
+
+Cargo Measurements Table
+
+Cargo Deleted Table
+
+Request Log Table
+
+
+Response Log Table
+
+Mapping Table
+
+
+ER Relation Diagram
+
+Please refer to the PNG diagram which is attached is the diagram below cannot be expanded
+
+
+Textual Representation of Relationships
+Cargo Details Table
+Primary Key: cargoId
+Relationships:
+One-to-Many with Service Details:
+cargoId in Cargo Details is referenced by cargoId in Service Details.
+One-to-Many with Parcel Details:
+cargoId in Cargo Details is referenced by cargoId in Parcel Details.
+One-to-Many with Parcel Measurements:
+cargoId in Cargo Details is referenced by cargoId in Parcel Measurements.
+One-to-Many with Cargo Measurements:
+cargoId in Cargo Details is referenced by cargoId in Cargo Measurements.
+One-to-Many with Cargo Deleted:
+cargoId in Cargo Details is referenced by cargoId in Cargo Deleted.
+One-to-Many with Mapping Table:
+cargoId in Cargo Details is referenced by cargoId in Mapping Table.
+Service Details Table
+Primary Key: cargoId
+Relationships:
+Many-to-One with Cargo Details:
+cargoId in Service Details references cargoId in Cargo Details.
+Parcel Details Table
+Primary Key: parcelId (and cargoId)
+Relationships:
+Many-to-One with Cargo Details:
+cargoId in Parcel Details references cargoId in Cargo Details.
+Parcel Measurements Table
+Primary Key: cargoParcelKey
+Relationships:
+Many-to-One with Parcel Details:
+parcelId in Parcel Measurements references parcelId in Parcel Details.
+Many-to-One with Cargo Details:
+cargoId in Parcel Measurements references cargoId in Cargo Details.
+Cargo Measurements Table
+Primary Key: cargoId
+Relationships:
+Many-to-One with Cargo Details:
+cargoId in Cargo Measurements references cargoId in Cargo Details.
+Cargo Deleted Table
+Primary Key: cargoId
+Relationships:
+Many-to-One with Cargo Details:
+cargoId in Cargo Deleted references cargoId in Cargo Details.
+Request Log Table
+Primary Key: requestId
+Relationships:
+One-to-Many with Response Log:
+requestId in Request Log is referenced by requestId in Response Log.
+One-to-Many with Mapping Table:
+requestId in Request Log is referenced by requestId in Mapping Table.
+Response Log Table
+Primary Key: responseId
+Relationships:
+Many-to-One with Request Log:
+requestId in Response Log references requestId in Request Log.
+Mapping Table
+Primary Key: mappingId
+Relationships:
+Many-to-One with Request Log:
+requestId in Mapping Table references requestId in Request Log.
+Many-to-One with Cargo Details:
+cargoId in Mapping
+
+Business Requirements
+
+Functional Requirements:  ND_Requirements_Commercial Management_ETRM Functional Requirements_V1.0.0_Final
+L5 Process Diagrams - Visio
+
+https://nextdecade.sharepoint.com/sites/EnterpriseReadiness2-COMM-LNGCOMMOPS/Shared%20Documents/COMM%20-%20LNG%20COMM%20OPS/Accord%20Design%20Phase/06%20Interfaces/NextSys%20Integrations%20Diagram%20WIP.pptx?web=1
+
+
+
+
+https://nextdecade.sharepoint.com/sites/EnterpriseReadiness2-COMM-LNGCOMMOPS/Shared%20Documents/COMM%20-%20LNG%20COMM%20OPS/Accord%20Design%20Phase/06%20Interfaces/LNG%20Quality%20Data%20-%20Process%20and%20Interfaces_5.9.2025.docx?web=1
+
+Business Case
+High level business use case for Openlink’s integration with NextSys:
+The integration between NextSys and Openlink will enable seamless data exchange of critical operational information, including LNG/HHC lifting schedules, feed gas and power demand forecasts, and actualized inventory levels. By automating the flow of this data, the integration will enhance decision-making capabilities, improve forecasting accuracy, and optimize inventory management. Ultimately, this will lead to increased operational efficiency.
+
+ 
+Figure 7:  Integration Working Diagram
+
+...

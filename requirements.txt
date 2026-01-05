@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+pypdf
+pdfplumber
+python-docx
+sap-ai-sdk-gen
+python-dotenv
+yaspin
+langchain
+langchain-core
