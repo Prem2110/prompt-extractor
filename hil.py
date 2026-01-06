@@ -57,6 +57,28 @@ Document:
 {document_text}
 """)
 
+# 🔥 NEW: LLM-based editor prompt
+IFLOW_EDIT_PROMPT = ChatPromptTemplate.from_template("""
+You are an SAP CPI design reviewer.
+
+You are given:
+1. The current approved iFlow design
+2. A human edit instruction
+
+Apply ONLY the requested change.
+Preserve all other content exactly.
+Do not summarize.
+Do not remove sections unless explicitly instructed.
+
+Current design:
+{current_design}
+
+Edit instruction:
+{edit_instruction}
+
+Return the FULL updated design.
+""")
+
 CANONICAL_IFLOW_PROMPT = ChatPromptTemplate.from_template("""
 You are generating a final execution prompt for an automated SAP CPI iFlow creation system.
 
@@ -95,17 +117,81 @@ def generate_understanding(document_text: str) -> str:
     return chain.invoke({"document_text": document_text})
 
 
+def apply_edit_with_llm(current_design: str, edit_instruction: str) -> str:
+    chain = IFLOW_EDIT_PROMPT | llm | StrOutputParser()
+    return chain.invoke({
+        "current_design": current_design,
+        "edit_instruction": edit_instruction
+    })
+
+
 def generate_final_prompt(approved_design: str) -> str:
     chain = CANONICAL_IFLOW_PROMPT | llm | StrOutputParser()
     return chain.invoke({"approved_design": approved_design})
 
 # =========================================================
-# MAIN FLOW (TERMINAL HITL)
+# HUMAN-IN-THE-LOOP REVIEW LOOP (LLM-ASSISTED)
+# =========================================================
+
+def review_loop(initial_understanding: str) -> str:
+    current_design = initial_understanding
+
+    while True:
+        print("\n========== IFLOW UNDERSTANDING ==========\n")
+        print(current_design)
+        print("\n========================================\n")
+
+        print("🧑‍💼 Human-in-the-loop decision:")
+        print("[Y] Yes   → Approve and continue")
+        print("[E] Edit  → Provide edit instruction")
+        print("[N] No    → Abort")
+
+        choice = input("\nEnter choice (Y/E/N): ").strip().lower()
+
+        if choice in ("y", "yes"):
+            print("\n✅ Design approved.")
+            return current_design
+
+        elif choice in ("e", "edit"):
+            print("\n✏️ Enter edit instruction (single or multi-line).")
+            print("Example: 'Update the package name to mcptest'")
+            print("Press ENTER on an empty line to apply.\n")
+
+            lines = []
+            while True:
+                line = input()
+                if line.strip() == "":
+                    break
+                lines.append(line)
+
+            edit_instruction = "\n".join(lines).strip()
+
+            if not edit_instruction:
+                print("⚠️ No edit provided. Skipping.")
+                continue
+
+            print("\n🧠 Applying edit using LLM...\n")
+            current_design = apply_edit_with_llm(
+                current_design=current_design,
+                edit_instruction=edit_instruction
+            )
+
+            print("🔄 Edit applied successfully.")
+
+        elif choice in ("n", "no"):
+            print("\n❌ Aborted by user.")
+            sys.exit(0)
+
+        else:
+            print("\n⚠️ Invalid choice. Please enter Y, E, or N.")
+
+# =========================================================
+# MAIN
 # =========================================================
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python cli_iflow_prompt.py <path-to-pdf-or-docx>")
+        print("Usage: python cli_iflow_hitl_llm_edit.py <path-to-pdf-or-docx>")
         sys.exit(1)
 
     file_path = sys.argv[1]
@@ -116,28 +202,7 @@ def main():
     print("\n🧠 Generating iFlow understanding (HITL)...\n")
     understanding = generate_understanding(document_text)
 
-    print("========== IFLOW UNDERSTANDING ==========\n")
-    print(understanding)
-    print("\n========================================\n")
-
-    print("✋ Review the above understanding.")
-    print("You may edit it before continuing.")
-    print("When ready, paste the APPROVED DESIGN below.")
-    print("End input with a blank line.\n")
-
-    # Read multi-line approved design from terminal
-    approved_lines = []
-    while True:
-        line = input()
-        if line.strip() == "":
-            break
-        approved_lines.append(line)
-
-    approved_design = "\n".join(approved_lines)
-
-    if not approved_design.strip():
-        print("❌ No approved design provided. Exiting.")
-        sys.exit(1)
+    approved_design = review_loop(understanding)
 
     print("\n🎯 Generating final canonical prompt...\n")
     final_prompt = generate_final_prompt(approved_design)
@@ -146,7 +211,7 @@ def main():
     print(final_prompt)
     print("\n============================================\n")
 
-    print("✅ Copy the above prompt into your existing iFlow creation code.")
+    print("✅ Ready for MCP / iFlow execution.")
 
 # =========================================================
 
